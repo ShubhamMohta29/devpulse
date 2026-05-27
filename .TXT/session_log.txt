@@ -1,0 +1,218 @@
+DEVPULSE — AI-Assisted Development Sessions
+Engineering Health Intelligence Agent | Hackathon Track: Fivetran
+Purpose: Chronological record of every development session. Append-only for
+past sessions; only the PENDING WORK section at the bottom is mutable.
+
+================================================================================
+SESSION 1 — 2026-05-23  (Project Kickoff & Documentation Sprint)
+================================================================================
+
+--------------------------------------------------------------------------------
+SCOPE
+--------------------------------------------------------------------------------
+Session targeted Phase 0: project foundation. Goal was to write all design
+documentation (PRD, TRD, schema, app flow) before any implementation code is
+created. No carry-over from a prior session — this is the project's first
+development session.
+
+--------------------------------------------------------------------------------
+BUILT
+--------------------------------------------------------------------------------
+
+1. PRD — PRODUCT REQUIREMENTS DOCUMENT
+   File: docs/PRD.md
+   - Defined the core problem: engineering teams generate large volumes of
+     operational data (PRs, Jira tickets, sprints, reviews) but lack timely
+     analysis tooling
+   - Identified 4 target personas: Engineering Manager, Tech Lead, Scrum Master,
+     Developer
+   - Defined 5 features: Daily Digest (F-01), Anomaly Detection (F-02),
+     Conversational Q&A (F-03), Fivetran Sync Awareness (F-04), Trend Reports
+     (F-05)
+   - Set success metrics: <24h stale PR detection, >90% anomaly catch rate,
+     -40% standup time, 80%+ conversational query coverage, >99% Fivetran sync
+     reliability
+   - Listed explicit non-goals: no Jira writes, no performance reviews, no
+     individual developer scoring
+
+2. TRD — TECHNICAL REQUIREMENTS DOCUMENT
+   File: docs/TRD.md
+   - Established 4-layer architecture: Fivetran → BigQuery → ADK+Gemini →
+     CLI/Slack/GUI
+   - Defined all 10 agent tools: 3 Fivetran MCP tools + 7 BigQuery SDK tools
+   - Documented 5 hard system prompt rules (staleness check mandatory,
+     aggregate-only, anomaly severity required, time-filtered SQL, staleness
+     warning prepend)
+   - Chose Google ADK as agent framework for first-class Gemini function calling
+   - Chose Gemini 1.5 Pro/Flash as LLM (Pro for digest generation, Flash for
+     conversational turns)
+   - Specified in-memory 10-turn conversation history as sufficient for v1
+
+3. DATA SCHEMA — BIGQUERY SCHEMA SPECIFICATION
+   File: docs/DATA_SCHEMA.md
+   - Defined 5 Fivetran-managed tables (read-only): github_pull_requests,
+     github_commits, github_reviews, jira_issues, jira_sprints
+   - Defined 3 agent-managed tables (read-write): agent_digests,
+     agent_anomalies, agent_logs
+   - Designed 5 pre-deployed BigQuery views: v_open_prs_aged,
+     v_commit_velocity_daily, v_ticket_age_by_status, v_sprint_burndown,
+     v_metric_baselines
+   - Established naming conventions: github_* and jira_* never modified by
+     agent; agent_* are agent-owned
+   - Specified that GitHub usernames are hashed in agent_digests to avoid PII
+
+4. APP FLOW — APPLICATION FLOW DOCUMENTATION
+   File: docs/APP_FLOW.md
+   - Documented primary flow: 11-step user query path from CLI/Slack/GUI input
+     to agent response + audit log entry
+   - Documented secondary flow: 9-step daily digest generation via Cloud Run
+     job or local cron at 08:00
+   - Documented tertiary flow: 6-step ad-hoc sync trigger when connector is
+     stale and user confirms they want fresh data
+   - Documented 5 error conditions and agent behaviour for each: MCP
+     unreachable, BQ timeout, Gemini rate limit, no data found, sync failure
+
+5. BUILD STATUS DOCUMENTS (this session, 2026-05-27)
+   Files: index.txt, implementation_plan.txt, session_log.txt
+   - index.txt: living snapshot of build status, tech stack, feature status,
+     schema, API routes, architecture notes
+   - implementation_plan.txt: phase-ordered build sequence with done criteria,
+     status tags, sprint actions, milestone summary, key decisions
+   - session_log.txt: this file — per-session development log
+
+--------------------------------------------------------------------------------
+BUGS ENCOUNTERED
+--------------------------------------------------------------------------------
+None. Documentation-only session; no runtime bugs possible.
+
+--------------------------------------------------------------------------------
+KNOWN BUGS / OPEN ITEMS
+--------------------------------------------------------------------------------
+None currently. All blockers are planned work items, not bugs.
+
+--------------------------------------------------------------------------------
+OPEN ITEMS CARRIED FORWARD
+--------------------------------------------------------------------------------
+- GCP project creation + BigQuery API enablement — prerequisite for all Phase 1
+  work; must be done before any tool code can be tested end-to-end
+- Fivetran account setup with GitHub + Jira connectors — required for live data
+  in BQ; free trial must be started before the hackathon deadline
+- requirements.txt and .env.example — must exist before any Python code is
+  runnable; currently the repo has no Python source files at all
+- Project directory scaffolding (agent/, tools/, schema/, jobs/, interface/,
+  tests/) — currently only docs/ and .git/ exist
+
+--------------------------------------------------------------------------------
+DESIGN DECISIONS / NOTES
+--------------------------------------------------------------------------------
+- Chose GUI as primary interface (over pure CLI) per TRD Section 2.2 to
+  improve user experience; exact framework (Streamlit vs Next.js) deferred
+- Chose to keep Slack webhook as optional (not required for hackathon demo) so
+  that the core agent can be demonstrated via CLI or GUI alone
+- Decided to hash GitHub usernames in agent_digests to sidestep PII concerns
+  entirely, even though Jira assignee_id is left as-is (Jira IDs are not names)
+- Chose Gemini 1.5 Flash for conversational turns and Pro for batch digest
+  generation — reduces latency and cost for interactive queries while keeping
+  digest quality high
+- In-memory conversation history (10 turns) chosen over a persistent session
+  store to minimise infrastructure complexity for the hackathon MVP
+
+================================================================================
+SESSION 2 — (next session goes here)
+================================================================================
+
+[Add session block when next development session begins]
+
+================================================================================
+PENDING WORK
+================================================================================
+
+Priority | Item                                | Sub-items
+──────── | ─────────────────────────────────── | ──────────────────────────────
+
+CRITICAL | GCP + Fivetran account setup        | • Create Google Cloud project
+         |                                     |   with BigQuery API enabled
+         |                                     | • Create Fivetran account (free
+         |                                     |   trial); add GitHub + Jira
+         |                                     |   connectors at 1h cadence
+         |                                     | • Create BQ service account
+         |                                     |   scoped to devpulse dataset
+         |                                     | • Connect Fivetran → BigQuery;
+         |                                     |   run initial sync
+
+CRITICAL | requirements.txt + .env.example     | • Add google-adk,
+         |                                     |   google-cloud-bigquery,
+         |                                     |   python-dotenv to requirements
+         |                                     | • Document all env vars:
+         |                                     |   FIVETRAN_API_KEY,
+         |                                     |   GOOGLE_API_KEY,
+         |                                     |   GCP_PROJECT_ID,
+         |                                     |   BQ_DATASET,
+         |                                     |   GITHUB_CONNECTOR_ID,
+         |                                     |   JIRA_CONNECTOR_ID,
+         |                                     |   SLACK_WEBHOOK_URL (optional)
+
+HIGH     | Project scaffolding                 | • Create agent/, tools/,
+         |                                     |   schema/, jobs/, interface/,
+         |                                     |   tests/ directories
+         |                                     | • Add __init__.py to each pkg
+         |                                     | • Expand README.md with setup
+         |                                     |   and usage instructions
+
+HIGH     | BigQuery schema deployment          | • Write DDL for 3 agent tables
+         | (schema/deploy_schema.py)           |   in schema/tables.sql
+         |                                     | • Write SQL for 5 views in
+         |                                     |   schema/views.sql
+         |                                     | • Write idempotent deploy script
+         |                                     |   (CREATE IF NOT EXISTS pattern)
+
+HIGH     | Fivetran MCP tool wrappers          | • check_connector_status()
+         | (tools/fivetran_tools.py)           | • trigger_sync() with 30s poll,
+         |                                     |   5-min timeout
+         |                                     | • list_connectors()
+         |                                     | • Error handling: MCP
+         |                                     |   unreachable fallback
+
+HIGH     | BigQuery read tools                 | • query_open_prs(min_age_days)
+         | (tools/bq_tools.py)                 | • query_commit_velocity(days)
+         |                                     | • query_stale_tickets(status,
+         |                                     |   min_age_days)
+         |                                     | • query_sprint_health()
+         |                                     | • All parameterised + time-
+         |                                     |   filtered
+
+MEDIUM   | Agent core + CLI                    | • system_prompt.py with 5 rules
+         | (agent/agent.py, agent/main.py,     | • ADK agent init + tool registry
+         |  interface/cli.py)                  | • 10-turn in-memory history
+         |                                     | • CLI interactive loop
+
+MEDIUM   | Anomaly detection + write tools     | • detect_anomalies() with
+         | (tools/bq_tools.py)                 |   z-score logic
+         |                                     | • write_digest() insert
+         |                                     | • generate_trend_report()
+         |                                     | • agent_anomalies write path
+
+MEDIUM   | Daily digest job                    | • jobs/daily_digest.py
+         | (jobs/daily_digest.py)              |   orchestrating 9-step flow
+         |                                     | • Optional Slack notifier
+         |                                     | • Runnable standalone
+
+LOW      | GUI (primary interface)             | • Framework selection (Streamlit
+         |                                     |   vs Next.js vs other)
+         |                                     | • Staleness warning display
+         |                                     | • Anomaly alert surfacing
+         |                                     | • Session management
+
+LOW      | Slack webhook interface             | • HMAC-SHA256 validation
+         | (interface/slack_handler.py)        | • Async response pattern
+         |                                     | • Slack block kit formatting
+
+LOW      | Test suite                          | • tests/test_fivetran_tools.py
+         | (tests/)                            | • tests/test_bq_tools.py
+         |                                     | • tests/test_agent.py
+         |                                     |   (integration test)
+
+LOW      | Cloud Run deployment                | • Dockerfile
+         | (optional)                          | • cloudrun.yaml + scheduler
+         |                                     | • Secret Manager for Slack URL
+         |                                     | • cloudbuild.yaml CI/CD pipeline
