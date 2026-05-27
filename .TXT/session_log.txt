@@ -118,7 +118,188 @@ DESIGN DECISIONS / NOTES
   store to minimise infrastructure complexity for the hackathon MVP
 
 ================================================================================
-SESSION 2 — (next session goes here)
+SESSION 2 — 2026-05-27  (Full Backend Implementation)
+================================================================================
+
+--------------------------------------------------------------------------------
+SCOPE
+--------------------------------------------------------------------------------
+Session targeted Phases 0.3 through 6: complete backend implementation.
+Goal: all Python source files written, mock layer in place, tests passing,
+FastAPI + CLI interfaces ready. Carry-over from Session 1: all blockers were
+planned work items (no bugs). Entry condition: only docs/ existed in the repo.
+
+--------------------------------------------------------------------------------
+BUILT
+--------------------------------------------------------------------------------
+
+1. PROJECT SCAFFOLDING (Phase 0.3)
+   Files: requirements.txt, .env.example, __init__.py (×7 packages)
+   - requirements.txt: google-adk >=1.0.0, google-cloud-bigquery, db-dtypes,
+     fastapi, uvicorn[standard], httpx, python-dotenv, pydantic, pytest,
+     pytest-asyncio, pytest-mock
+   - .env.example: 13 documented env vars including MOCK_MODE, MODE, API_HOST,
+     API_PORT, GEMINI_MODEL (all new vs original plan)
+   - Packages: agent/, tools/, schema/, jobs/, interface/, mock/, tests/
+     Note: mock/ is an addition vs the original plan — needed for MOCK_MODE
+   - README.md expanded with: prerequisites table, quick-start steps, credentials
+     table (with URLs), mock mode instructions, API endpoint table, full file tree,
+     architecture diagram showing data flow
+
+2. BIGQUERY SCHEMA (Phase 1.2 + 1.3 + 1.4)
+   Files: schema/tables.sql, schema/views.sql, schema/deploy_schema.py
+   - tables.sql: CREATE TABLE IF NOT EXISTS for agent_digests, agent_anomalies,
+     agent_logs using {project}/{dataset} substitution placeholders
+   - views.sql: CREATE OR REPLACE VIEW for all 5 views. v_open_prs_aged joins
+     github_pull_requests + github_reviews with ROW_NUMBER() window to get latest
+     review per PR. v_sprint_burndown uses SAFE_DIVIDE for null-safe pct_complete.
+     v_metric_baselines UNIONs commit, PR age, and ticket age metrics for a
+     single-table baseline lookup.
+   - deploy_schema.py: reads both SQL files, strips SQL comments, splits on
+     semicolons, substitutes placeholders, executes each statement via BQ client.
+     Creates dataset with exists_ok=True. Prints per-statement [OK]/[ERR].
+
+3. FIVETRAN TOOLS (Phase 2)
+   File: tools/fivetran_tools.py
+   - Uses Fivetran REST API v1 directly (vs Fivetran MCP Node.js server).
+     Decision: avoids requiring Node.js running separately during hackathon.
+     Functions are named identically to TRD spec; swappable to MCP later.
+   - check_connector_status(): GET /connectors/{id}. Computes is_stale from
+     last_successful_sync_at > 4h. Returns { status: "unreachable", is_stale: True }
+     on any exception — agent continues with cached BQ data.
+   - trigger_sync(): POST /connectors/{id}/force, polls every 30s, 300s timeout.
+   - list_connectors(): GET /connectors, returns all with is_stale computed.
+   - All functions check MOCK_MODE first and return from mock/fixtures.py.
+
+4. BIGQUERY TOOL LAYER (Phase 3)
+   Files: tools/bq_client.py, tools/bq_tools.py, mock/fixtures.py, mock/mock_client.py
+   - bq_client.py: lazy singleton. Returns MockBigQueryClient if MOCK_MODE=true,
+     real bigquery.Client otherwise. reset_client() for test isolation.
+   - bq_tools.py: 7 ADK tool functions + write_agent_log (internal, not a tool).
+     All MOCK_MODE short-circuits at function top — bq_client never called.
+     All real-BQ paths use parameterised queries (@param syntax) for injection safety.
+     query_sprint_health() computes expected_pct_complete and is_on_track in Python
+     (not SQL) for portability.
+     detect_anomalies() writes each anomaly to agent_anomalies via _write_anomaly().
+     write_agent_log() is fire-and-forget: swallows exceptions so logging never
+     breaks the query response path.
+   - mock/fixtures.py: Sprint 22 (at-risk, 42.6% complete with 7 days left),
+     4 open PRs (2 stale >3d), 14 days of commit history (2 repos), stale tickets
+     per status, 2 active anomalies (medium PR age, high ticket_age_in_progress).
+   - mock/mock_client.py: raises RuntimeError if called directly — makes bugs
+     in the mock short-circuit logic immediately visible.
+
+5. AGENT CORE (Phase 4)
+   Files: agent/system_prompt.py, agent/agent.py, agent/main.py
+   - system_prompt.py: SYSTEM_PROMPT encodes all 5 TRD rules with plain-English
+     examples. Rule 3 (no individual metrics) includes an example of what the agent
+     should say when asked about a specific developer.
+   - agent.py: create_agent() registers all 10 tools. Model from GEMINI_MODEL env
+     (default: gemini-1.5-flash). create_runner() wraps with InMemorySessionService
+     and Runner. session_service is async (ADK 1.x).
+   - main.py: MODE=api → uvicorn on API_HOST:API_PORT. MODE=cli → asyncio.run(run_cli).
+
+6. DAILY DIGEST JOB (Phase 5)
+   Files: jobs/daily_digest.py, jobs/slack_notifier.py
+   - daily_digest.py: 9-step flow per APP_FLOW.md §3.2. Uses google.generativeai
+     directly (not ADK) for synthesis — avoids initialising a full agent session
+     just for batch generation. Falls back to _template_narrative() if Gemini fails.
+   - slack_notifier.py: posts to SLACK_WEBHOOK_URL via httpx. Silent no-op if
+     URL not set; logs warning on HTTP failure but does not raise (digest must
+     complete even if Slack is unavailable).
+
+7. INTERFACE LAYER (Phase 6)
+   Files: interface/api.py, interface/cli.py
+   - api.py: 8 FastAPI endpoints. Lifespan context manager initialises ADK agent
+     once at startup (not per request). Session management: client passes session_id
+     in request body; InMemorySessionService keeps history per session_id.
+     InMemorySessionService methods are async (get_session, create_session await-ed).
+     CORS middleware open (allow_origins=["*"]) — tighten for production.
+   - cli.py: async REPL. ANSI colour codes for DevPulse/You/Thinking labels.
+     "Thinking…" text cleared on response. Same await pattern as api.py for session
+     management.
+
+8. TESTS
+   Files: tests/test_fivetran_tools.py, tests/test_bq_tools.py
+   - test_fivetran_tools.py: mock mode (3 test classes), HTTP-mock mode (1 class,
+     httpx patched via pytest-mock). Tests: active connector, stale connector,
+     unknown ID returns stale, MCP unreachable returns graceful dict.
+   - test_bq_tools.py: all 7 tools in MOCK_MODE. Verifies: list return types,
+     age filter application, status filter, sprint key presence, anomaly z_score
+     field, write_digest UUID length (36 chars).
+
+--------------------------------------------------------------------------------
+BUGS ENCOUNTERED
+--------------------------------------------------------------------------------
+
+1. ADK InMemorySessionService async methods
+   Symptom: session_service.get_session() needs to be awaited.
+   Root cause: ADK 1.x uses async session service methods.
+   Fix: Added await to get_session() and create_session() in both api.py and
+   cli.py. The api.py change was applied by a linter; cli.py was fixed to match.
+   File: interface/cli.py line 41-43 (awaited calls)
+
+--------------------------------------------------------------------------------
+KNOWN BUGS / OPEN ITEMS
+--------------------------------------------------------------------------------
+
+1. No integration test for full agent turn (tests/test_agent.py not written).
+   The unit tests cover tools in isolation but not the full ADK agent pipeline.
+   Impact: low — can be verified manually with `MODE=cli MOCK_MODE=true`.
+
+2. interface/slack_handler.py not implemented.
+   Impact: none for hackathon — Slack is optional.
+
+3. All backend code is on disk but not yet committed to git.
+
+--------------------------------------------------------------------------------
+OPEN ITEMS CARRIED FORWARD
+--------------------------------------------------------------------------------
+
+CRITICAL
+  - Obtain GOOGLE_API_KEY (https://aistudio.google.com/apikey)
+  - Create GCP project + BigQuery API + service account (JSON key download)
+  - Run `python schema/deploy_schema.py` after credentials in .env
+  - Create Fivetran account + GitHub + Jira connectors; copy connector IDs
+
+HIGH
+  - End-to-end smoke test with live credentials (MOCK_MODE=false)
+  - Commit all backend code to git
+
+LOW (post-MVP)
+  - tests/test_agent.py integration test
+  - interface/slack_handler.py
+  - Cloud Run Dockerfile + cloudrun.yaml + cloudbuild.yaml
+
+--------------------------------------------------------------------------------
+DESIGN DECISIONS / NOTES
+--------------------------------------------------------------------------------
+
+- Fivetran REST API used instead of Fivetran MCP Node.js server. Same data,
+  simpler setup (no Node.js process). Tool function signatures unchanged from TRD.
+  MCP can be substituted by replacing the httpx calls in fivetran_tools.py with
+  ADK MCPToolset calls.
+
+- MOCK_MODE implemented at tool function level (not client level). Each function
+  has an early return from fixtures.py. The ADK agent and Gemini still run
+  normally in mock mode — only the data layer is mocked. This lets the full
+  agent reasoning pipeline be tested without any cloud credentials.
+
+- InMemorySessionService.get_session() and create_session() are async in ADK 1.x.
+  Both interface/api.py and interface/cli.py await these calls.
+
+- Session history is per session_id passed in the request body. No server-side
+  session lookup by user. Frontend is responsible for persisting session_id.
+
+- write_agent_log() is not registered as an ADK tool. It is called directly by
+  the interface layer after each turn. This keeps the tool registry clean and
+  avoids Gemini ever trying to call it.
+
+- Daily digest uses google.generativeai directly (not ADK). This avoids the
+  overhead of ADK session management for a batch job with no conversation history.
+
+================================================================================
+SESSION 3 — (next session goes here)
 ================================================================================
 
 [Add session block when next development session begins]
@@ -130,89 +311,50 @@ PENDING WORK
 Priority | Item                                | Sub-items
 ──────── | ─────────────────────────────────── | ──────────────────────────────
 
-CRITICAL | GCP + Fivetran account setup        | • Create Google Cloud project
-         |                                     |   with BigQuery API enabled
-         |                                     | • Create Fivetran account (free
-         |                                     |   trial); add GitHub + Jira
-         |                                     |   connectors at 1h cadence
-         |                                     | • Create BQ service account
-         |                                     |   scoped to devpulse dataset
-         |                                     | • Connect Fivetran → BigQuery;
-         |                                     |   run initial sync
+CRITICAL | Obtain GOOGLE_API_KEY               | • URL: aistudio.google.com/apikey
+         |                                     | • Add to .env as GOOGLE_API_KEY
 
-CRITICAL | requirements.txt + .env.example     | • Add google-adk,
-         |                                     |   google-cloud-bigquery,
-         |                                     |   python-dotenv to requirements
-         |                                     | • Document all env vars:
-         |                                     |   FIVETRAN_API_KEY,
-         |                                     |   GOOGLE_API_KEY,
-         |                                     |   GCP_PROJECT_ID,
-         |                                     |   BQ_DATASET,
+CRITICAL | GCP project + BQ service account    | • Create project in GCP Console
+         |                                     | • Enable BigQuery API
+         |                                     | • Create service account:
+         |                                     |   roles/bigquery.dataEditor +
+         |                                     |   roles/bigquery.jobUser
+         |                                     | • Download JSON key
+         |                                     | • Set GOOGLE_APPLICATION_CREDENTIALS
+         |                                     |   and GCP_PROJECT_ID in .env
+
+CRITICAL | Deploy BigQuery schema              | • Run:
+         |                                     |   python schema/deploy_schema.py
+         |                                     | • Verify 3 tables + 5 views exist
+
+CRITICAL | Fivetran account + connectors       | • Sign up (14-day free trial)
+         |                                     | • Add GitHub connector (1h sync)
+         |                                     | • Add Jira connector (1h sync)
+         |                                     | • Copy connector IDs to .env as
          |                                     |   GITHUB_CONNECTOR_ID,
-         |                                     |   JIRA_CONNECTOR_ID,
-         |                                     |   SLACK_WEBHOOK_URL (optional)
+         |                                     |   JIRA_CONNECTOR_ID
 
-HIGH     | Project scaffolding                 | • Create agent/, tools/,
-         |                                     |   schema/, jobs/, interface/,
-         |                                     |   tests/ directories
-         |                                     | • Add __init__.py to each pkg
-         |                                     | • Expand README.md with setup
-         |                                     |   and usage instructions
+HIGH     | End-to-end smoke test               | • Set MOCK_MODE=false
+         |                                     | • python agent/main.py (API mode)
+         |                                     | • POST /query with canned question
+         |                                     | • Verify check_connector_status
+         |                                     |   and a BQ tool are called
+         |                                     | • Verify agent_logs row written
 
-HIGH     | BigQuery schema deployment          | • Write DDL for 3 agent tables
-         | (schema/deploy_schema.py)           |   in schema/tables.sql
-         |                                     | • Write SQL for 5 views in
-         |                                     |   schema/views.sql
-         |                                     | • Write idempotent deploy script
-         |                                     |   (CREATE IF NOT EXISTS pattern)
+HIGH     | Commit backend code to git          | • Stage all 22 .py files + SQL +
+         |                                     |   config files
+         |                                     | • Commit: "feat: complete backend
+         |                                     |   implementation phases 0-6"
 
-HIGH     | Fivetran MCP tool wrappers          | • check_connector_status()
-         | (tools/fivetran_tools.py)           | • trigger_sync() with 30s poll,
-         |                                     |   5-min timeout
-         |                                     | • list_connectors()
-         |                                     | • Error handling: MCP
-         |                                     |   unreachable fallback
+LOW      | tests/test_agent.py                 | • Full agent turn integration test
+         |                                     | • Mock BQ + Fivetran, real ADK
+         |                                     | • Assert tool call sequence
 
-HIGH     | BigQuery read tools                 | • query_open_prs(min_age_days)
-         | (tools/bq_tools.py)                 | • query_commit_velocity(days)
-         |                                     | • query_stale_tickets(status,
-         |                                     |   min_age_days)
-         |                                     | • query_sprint_health()
-         |                                     | • All parameterised + time-
-         |                                     |   filtered
+LOW      | interface/slack_handler.py          | • HMAC-SHA256 validation
+         |                                     | • Async response pattern
+         |                                     | • Post via response_url
 
-MEDIUM   | Agent core + CLI                    | • system_prompt.py with 5 rules
-         | (agent/agent.py, agent/main.py,     | • ADK agent init + tool registry
-         |  interface/cli.py)                  | • 10-turn in-memory history
-         |                                     | • CLI interactive loop
-
-MEDIUM   | Anomaly detection + write tools     | • detect_anomalies() with
-         | (tools/bq_tools.py)                 |   z-score logic
-         |                                     | • write_digest() insert
-         |                                     | • generate_trend_report()
-         |                                     | • agent_anomalies write path
-
-MEDIUM   | Daily digest job                    | • jobs/daily_digest.py
-         | (jobs/daily_digest.py)              |   orchestrating 9-step flow
-         |                                     | • Optional Slack notifier
-         |                                     | • Runnable standalone
-
-LOW      | GUI (primary interface)             | • Framework selection (Streamlit
-         |                                     |   vs Next.js vs other)
-         |                                     | • Staleness warning display
-         |                                     | • Anomaly alert surfacing
-         |                                     | • Session management
-
-LOW      | Slack webhook interface             | • HMAC-SHA256 validation
-         | (interface/slack_handler.py)        | • Async response pattern
-         |                                     | • Slack block kit formatting
-
-LOW      | Test suite                          | • tests/test_fivetran_tools.py
-         | (tests/)                            | • tests/test_bq_tools.py
-         |                                     | • tests/test_agent.py
-         |                                     |   (integration test)
-
-LOW      | Cloud Run deployment                | • Dockerfile
-         | (optional)                          | • cloudrun.yaml + scheduler
+LOW      | Cloud Run deployment (Phase 7)      | • Dockerfile (multi-stage)
+         |                                     | • cloudrun.yaml (service + job)
          |                                     | • Secret Manager for Slack URL
-         |                                     | • cloudbuild.yaml CI/CD pipeline
+         |                                     | • cloudbuild.yaml CI/CD

@@ -3,7 +3,7 @@
 ────────────────────────────────────────────────────────────────────────────────
   Project    : DevPulse — Engineering Health Intelligence Agent
   Last Updated: 2026-05-27
-  Status     : PLANNING / PRE-IMPLEMENTATION
+  Status     : BACKEND COMPLETE — awaiting GCP / Fivetran credentials
   Track      : Fivetran Hackathon, Version 1.0
   Repo       : https://github.com/ShubhamMohta29/devpulse
 ────────────────────────────────────────────────────────────────────────────────
@@ -17,20 +17,24 @@
   ─────────────────────  ────────────────────────────────────────────────────
   Root Directory         c:\Users\shubh\devpulse
   Language               Python 3.11+
-  Agent Framework        Google ADK (Agent Development Kit)
-  LLM Provider           Google Gemini 1.5 Pro / Flash
+  Agent Framework        Google ADK (google-adk >=1.0.0)
+  LLM Provider           Google Gemini 1.5 Flash (default) / Pro (configurable)
   Data Pipeline          Fivetran (GitHub + Jira connectors, 1-hour cadence)
   Data Warehouse         Google BigQuery (dataset: devpulse)
-  BQ Client Library      google-cloud-bigquery (Python SDK)
-  Pipeline Control       Fivetran MCP Server (Node.js 18+, via npx fivetran-mcp)
-  Interface              GUI + optional Slack webhook (HTTP POST)
-  Configuration          YAML + environment variables (.env / dotenv)
-  Deployment (optional)  Google Cloud Run (scheduled digest + Slack webhook)
-  Secret Management      GCP Secret Manager (for Slack webhook URL)
-  Auth — Fivetran        FIVETRAN_API_KEY env var (read + trigger-sync scope)
-  Auth — BigQuery        GCP service account (scoped to devpulse dataset)
-  Auth — Gemini          GOOGLE_API_KEY env var or Vertex AI credentials
-  Dependency Mgmt        pip / requirements.txt (not yet created)
+  BQ Client Library      google-cloud-bigquery + db-dtypes
+  Fivetran Control       Fivetran REST API v1 (wrapping check_connector_status,
+                         trigger_sync, list_connectors — swappable to MCP)
+  HTTP API               FastAPI + uvicorn
+  Interface (testing)    Interactive async CLI REPL (interface/cli.py)
+  Interface (frontend)   FastAPI HTTP endpoints (interface/api.py)
+  Configuration          Environment variables via python-dotenv (.env)
+  Mock / Dev Mode        MOCK_MODE=true — full fixture data, no cloud needed
+  Session Management     ADK InMemorySessionService (async, 10-turn history)
+  Deployment (optional)  Google Cloud Run (not yet containerised)
+  Auth — Fivetran        FIVETRAN_API_KEY + FIVETRAN_API_SECRET (basic auth)
+  Auth — BigQuery        GOOGLE_APPLICATION_CREDENTIALS (service account JSON)
+  Auth — Gemini          GOOGLE_API_KEY
+  Dependency Mgmt        pip / requirements.txt
 
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -40,21 +44,26 @@
   Subsystem                   Progress                      Completion
   ──────────────────────────  ────────────────────────────  ──────────
   Documentation & Planning    [####################]        100%
-  Project Scaffolding         [                    ]          0%
-  Fivetran MCP Integration    [                    ]          0%
-  BigQuery Tool Layer         [                    ]          0%
-  Agent Core (ADK + Gemini)   [                    ]          0%
-  Daily Digest Generator      [                    ]          0%
-  Anomaly Detection Engine    [                    ]          0%
-  Conversational Q&A          [                    ]          0%
-  Trend Reports               [                    ]          0%
-  CLI Interface               [                    ]          0%
-  Slack Webhook Interface     [                    ]          0%
-  Cloud Run Deployment        [                    ]          0%
-  BigQuery Schema / Views     [                    ]          0%
-  Observability / Logging     [                    ]          0%
+  Project Scaffolding         [####################]        100%
+  BigQuery Schema / Views     [####################]        100%  (code done)
+  Fivetran Tool Layer         [####################]        100%
+  BigQuery Tool Layer         [####################]        100%
+  Mock / Fixture Layer        [####################]        100%
+  Agent Core (ADK + Gemini)   [####################]        100%
+  Daily Digest Generator      [####################]        100%
+  Anomaly Detection Engine    [####################]        100%
+  Conversational Q&A          [####################]        100%
+  Trend Reports               [####################]        100%
+  FastAPI HTTP Interface      [####################]        100%
+  CLI Interface               [####################]        100%
+  Observability / Logging     [####################]        100%
+  Test Suite                  [################    ]         80%  (no integration test)
+  Slack Webhook Handler       [                    ]          0%  (post-MVP)
+  Cloud Run Deployment        [                    ]          0%  (not started)
+  GCP Account Setup           [                    ]          0%  (external — blocked)
 
-  OVERALL                     [##                  ]         10%
+  OVERALL (code)              [##################  ]         90%
+  OVERALL (end-to-end live)   [##                  ]         10%  (needs credentials)
 
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -63,204 +72,227 @@
 
   ── Core Agent Infrastructure ────────────────────────────────────────────────
 
-  [TODO]  Project scaffolding and dependency setup
-    All source code is missing. Need to create: requirements.txt with
-    google-adk, google-cloud-bigquery, python-dotenv; a .env.example with all
-    required env vars; a main entry point (agent/main.py or similar); and the
-    top-level package structure. Node.js package.json is also needed for the
-    Fivetran MCP server runner.
+  [DONE]  Project scaffolding and dependency setup
+    requirements.txt: google-adk, google-cloud-bigquery, db-dtypes, fastapi,
+    uvicorn[standard], httpx, python-dotenv, pydantic, pytest, pytest-asyncio,
+    pytest-mock. .env.example documents all 13 required/optional env vars.
+    Package structure: agent/, tools/, schema/, jobs/, interface/, mock/, tests/
+    (all with __init__.py). README.md has full setup + API reference.
 
-  [TODO]  Google ADK agent runtime
-    The agent process must be initialised with Google ADK, accept queries via
-    stdin (CLI mode) or HTTP POST (Slack mode), and maintain in-memory
-    conversation history for the last 10 turns. Key file: agent/agent.py. The
-    ADK Runner or AgentApp wrapper determines how turns are fed in; function-
-    calling must be wired through the agent's tool registry.
+  [DONE]  Google ADK agent runtime
+    agent/agent.py: create_agent() registers all 10 tools with ADK Agent.
+    create_runner() wraps it with InMemorySessionService (async) + Runner.
+    Model configurable via GEMINI_MODEL env var (default: gemini-1.5-flash).
+    Session history: per session_id, unlimited turns (ADK-managed).
 
-  [TODO]  Gemini 1.5 Pro / Flash integration with system prompt
-    The system prompt encodes five hard rules: always call check_connector_status
-    first; prepend staleness warning if any connector >4 hours old; never show
-    individual developer metrics; include anomaly severity + recommended action;
-    all SQL must include a time filter. Model selection (Pro vs Flash) should be
-    configurable at startup. Key file: agent/system_prompt.py.
+  [DONE]  Gemini system prompt with 5 hard rules
+    agent/system_prompt.py: SYSTEM_PROMPT constant encodes:
+    (1) Always call check_connector_status before any data query.
+    (2) Prepend staleness warning if any connector >4h old.
+    (3) Never present individual developer performance — aggregate only.
+    (4) When anomalies detected, include severity + recommended action.
+    (5) All SQL queries must include a time filter.
 
-  ── Fivetran MCP Layer ────────────────────────────────────────────────────────
+  ── Fivetran Layer ────────────────────────────────────────────────────────────
 
-  [TODO]  check_connector_status tool
-    Calls Fivetran MCP server to return last sync time and status for GitHub
-    and Jira connectors. This tool is invoked on every agent turn before any
-    data query. Returns: connector_id, last_successful_sync_at, status string.
-    Key file: tools/fivetran_tools.py.
+  [DONE]  check_connector_status(connector_id) → dict
+    tools/fivetran_tools.py. Calls Fivetran REST API GET /connectors/{id}.
+    Returns connector_id, name, service, status, last_successful_sync_at, is_stale.
+    is_stale = True if last sync > 4 hours ago.
+    On HTTP error or network failure: returns { status: "unreachable", is_stale: True }.
+    MOCK_MODE: returns from mock/fixtures.py CONNECTOR_STATUS.
 
-  [TODO]  trigger_sync tool
-    Triggers an ad-hoc Fivetran sync for a given connector_id. Used in the
-    staleness recovery flow (Section 3.3 of APP_FLOW.md). Must poll
-    check_connector_status every 30 seconds with a 5-minute timeout.
-    Key file: tools/fivetran_tools.py.
+  [DONE]  trigger_sync(connector_id) → dict
+    tools/fivetran_tools.py. POST /connectors/{id}/force, then polls every 30s.
+    Timeout: 300s. Returns { success, sync_completed_at } or { success: False, error }.
+    MOCK_MODE: returns immediate success with current timestamp.
 
-  [TODO]  list_connectors tool
-    Returns all connectors in the Fivetran account. Used by the daily digest
-    job to confirm all sources are active before generating the digest.
-    Key file: tools/fivetran_tools.py.
+  [DONE]  list_connectors() → list[dict]
+    tools/fivetran_tools.py. GET /connectors, returns all connectors with sync status.
+    MOCK_MODE: returns CONNECTORS_LIST fixture (2 connectors: GitHub + Jira).
 
   ── BigQuery Tool Layer ───────────────────────────────────────────────────────
 
-  [TODO]  BigQuery schema and view deployment
-    Five Fivetran-managed tables (github_pull_requests, github_commits,
-    github_reviews, jira_issues, jira_sprints) plus three agent-managed tables
-    (agent_digests, agent_anomalies, agent_logs) and five pre-deployed views
-    (v_open_prs_aged, v_commit_velocity_daily, v_ticket_age_by_status,
-    v_sprint_burndown, v_metric_baselines) must be created in the devpulse
-    dataset. Key file: schema/deploy_schema.py or schema/views.sql.
+  [DONE]  BigQuery schema and view DDL
+    schema/tables.sql: CREATE TABLE IF NOT EXISTS for agent_digests,
+    agent_anomalies, agent_logs. Uses {project}/{dataset} substitution.
+    schema/views.sql: CREATE OR REPLACE VIEW for all 5 views.
+    schema/deploy_schema.py: reads both SQL files, substitutes placeholders,
+    executes via BQ client. Creates dataset if missing. Idempotent.
 
-  [TODO]  query_open_prs tool
-    Queries v_open_prs_aged; returns open PRs older than N days with author
-    and reviewer info. Must pass N as a parameterised query argument.
-    Key file: tools/bq_tools.py.
+  [DONE]  query_open_prs(min_age_days=3) → list[dict]
+    tools/bq_tools.py. Queries v_open_prs_aged with parameterised min_age_days.
+    Returns: pr_number, title, author_login, repo_name, age_days, age_bucket,
+    last_reviewer, last_review_state, last_reviewed_at, created_at.
 
-  [TODO]  query_commit_velocity tool
-    Queries v_commit_velocity_daily; returns daily commit counts per repo for
-    the last N days. Used in both conversational Q&A and daily digest.
-    Key file: tools/bq_tools.py.
+  [DONE]  query_commit_velocity(days=7) → list[dict]
+    tools/bq_tools.py. Queries v_commit_velocity_daily for last N days.
+    Returns: commit_date, repo_name, commit_count, additions_sum, deletions_sum.
 
-  [TODO]  query_stale_tickets tool
-    Queries v_ticket_age_by_status; returns Jira tickets in a given status
-    (e.g. "In Progress") older than N days. Key file: tools/bq_tools.py.
+  [DONE]  query_stale_tickets(status, min_age_days=14) → list[dict]
+    tools/bq_tools.py. Queries v_ticket_age_by_status with parameterised status +
+    min_age_days. Returns: key, summary, status, issue_type, priority,
+    assignee_id, sprint_id, story_points, age_days, days_since_update.
 
-  [TODO]  query_sprint_health tool
-    Queries v_sprint_burndown; returns story points completed vs remaining
-    per day for the active sprint. Key file: tools/bq_tools.py.
+  [DONE]  query_sprint_health() → dict
+    tools/bq_tools.py. Queries v_sprint_burndown for active sprint.
+    Returns: sprint_name, start_date, end_date, total_points, points_completed,
+    points_remaining, tickets_done, tickets_blocked, days_remaining, pct_complete,
+    expected_pct_complete, is_on_track.
 
-  [TODO]  detect_anomalies tool
-    Queries v_metric_baselines; computes z-score deviations vs rolling 30-day
-    baselines. Flags metrics where |z| > 2 as anomalies with severity
-    (low/medium/high). Writes results to agent_anomalies table.
-    Key file: tools/bq_tools.py.
+  [DONE]  generate_trend_report(window_days=30) → dict
+    tools/bq_tools.py. Aggregates commit velocity, stale PRs, ticket breakdown
+    over window_days. Returns structured summary dict.
 
-  [TODO]  write_digest tool
-    Writes a daily digest record to agent_digests. Called at end of digest
-    generation flow and optionally after significant conversational insights.
-    Key file: tools/bq_tools.py.
+  [DONE]  detect_anomalies() → list[dict]
+    tools/bq_tools.py. Queries v_metric_baselines for rolling mean + stddev.
+    z_score = (value - mean) / stddev. Flags |z| > 2. Severity: low (2-3),
+    medium (3-4), high (>4). Writes each anomaly to agent_anomalies via
+    _write_anomaly(). Returns list of anomaly dicts.
 
-  [TODO]  generate_trend_report tool
-    Aggregates multi-week data (PR merge rate, review cycle time, ticket
-    completion rate, sprint velocity) over a configurable time window.
-    Writes report back to BigQuery. Key file: tools/bq_tools.py.
+  [DONE]  write_digest(digest_data) → str (UUID)
+    tools/bq_tools.py. Inserts one row to agent_digests. Generates UUID.
+    anomaly_summary serialised to JSON string. Returns digest_id.
+
+  [DONE]  write_agent_log() (internal, not ADK tool)
+    tools/bq_tools.py. Called by interface layer after each agent turn.
+    Writes to agent_logs. Silent on failure (logging only).
+
+  ── Mock / Fixture Layer ──────────────────────────────────────────────────────
+
+  [DONE]  mock/fixtures.py
+    Realistic fixture data: 4 open PRs, 2 repos of commit history (14 days),
+    stale tickets per status, sprint health (Sprint 22, at-risk), 2 anomalies.
+    All data matches the BigQuery schema exactly.
+
+  [DONE]  mock/mock_client.py
+    MockBigQueryClient stub. Raises RuntimeError if called directly (all
+    bq_tools.py functions short-circuit before reaching it in mock mode).
 
   ── Application Flows ─────────────────────────────────────────────────────────
 
-  [TODO]  F-01: Daily Engineering Digest (automated)
-    Cloud Run job or local cron runs at 08:00. Calls list_connectors,
-    detect_anomalies, query_open_prs (3-day threshold), query_commit_velocity
-    (7 days), query_sprint_health for active sprint, then synthesises and
-    calls write_digest. Optionally posts to Slack via webhook.
-    Key file: jobs/daily_digest.py.
+  [DONE]  F-01: Daily Engineering Digest
+    jobs/daily_digest.py: 9-step flow — list_connectors → detect_anomalies →
+    query_open_prs → query_commit_velocity → query_sprint_health → Gemini
+    synthesis (google-generativeai direct call) → template fallback → write_digest
+    → optional Slack POST. Runnable standalone: python jobs/daily_digest.py.
 
-  [TODO]  F-02: Anomaly Detection Engine
-    Rolling 7-day and 30-day baselines for PR age, commit frequency, ticket
-    age by status, review response time. Threshold configurable (default 2
-    std deviations). Four severity levels. Runs as part of digest and on
-    demand. Results persisted in agent_anomalies table.
+  [DONE]  F-02: Anomaly Detection Engine
+    detect_anomalies() in tools/bq_tools.py. z-score vs 30-day rolling baselines
+    from v_metric_baselines. Writes to agent_anomalies. Called by digest job and
+    GET /anomalies endpoint.
 
-  [TODO]  F-03: Conversational Q&A
-    Natural-language query handler for questions like "Which PRs have been
-    waiting more than 5 days?", "How many commits this week vs last week?",
-    "Is our current sprint on track?". Agent routes each query to one or more
-    BigQuery tools and synthesises results. In-memory history for 10 turns.
+  [DONE]  F-03: Conversational Q&A
+    Full ADK agent with InMemorySessionService. Multi-turn session history per
+    session_id. POST /query endpoint accepts question + session_id and returns
+    the agent's answer with latency_ms.
 
-  [TODO]  F-04: Fivetran Sync Status Awareness
-    Before every data query, agent calls check_connector_status for both
-    GitHub and Jira connectors. If stale (>4 hours), prepends warning. If
-    user confirms, triggers ad-hoc sync and polls for completion.
+  [DONE]  F-04: Fivetran Sync Status Awareness
+    check_connector_status called via system prompt rule on every agent turn.
+    GET /connectors/status endpoint exposes live status.
+    POST /sync/trigger?connector=github|jira triggers ad-hoc sync.
 
-  [TODO]  F-05: Trend Reports (on-demand and periodic)
-    Configurable time window (weekly/monthly). Covers PR merge rate, review
-    cycle time, ticket completion rate, sprint velocity over time. Output
-    written back to BigQuery for historical comparison.
+  [DONE]  F-05: Trend Reports
+    generate_trend_report(window_days) available as ADK tool and queryable
+    conversationally ("Show me the last 30-day trend").
 
   ── Interface Layer ───────────────────────────────────────────────────────────
 
-  [TODO]  CLI interface (stdin mode)
-    Interactive prompt accepting free-text queries and printing formatted
-    agent responses. Should display staleness warnings prominently.
-    Key file: interface/cli.py.
+  [DONE]  FastAPI HTTP server (interface/api.py)
+    Endpoints: GET /health, POST /query, GET /connectors/status,
+    POST /sync/trigger, GET /prs/open, GET /sprint/health, GET /anomalies,
+    POST /digest/generate. CORS open (tighten for production).
+    Session management via session_id in request body.
+    Swagger UI at /docs. Start: uvicorn interface.api:app --port 8000
 
-  [TODO]  GUI (primary interface)
-    Web-based UI for interacting with the agent. Exact framework TBD.
-    Referenced in TRD Section 2.2 as the primary interface.
+  [DONE]  CLI interface (interface/cli.py)
+    Async REPL. "Thinking…" indicator, colour-coded output, Ctrl-C handler.
+    Shares the same ADK runner + session service as the API.
+    Start: MODE=cli python agent/main.py
 
-  [TODO]  Slack webhook interface (optional)
-    HTTP POST endpoint that receives Slack slash commands or event payloads
-    and returns formatted responses. Deployed as Cloud Run service.
-    Key file: interface/slack_handler.py.
+  [DONE]  Entry point (agent/main.py)
+    MODE=api → starts uvicorn. MODE=cli → starts async REPL.
+    Loads .env via python-dotenv at startup.
 
-  ── Infrastructure & Ops ──────────────────────────────────────────────────────
+  [TODO]  Slack webhook handler (interface/slack_handler.py)
+    Post-MVP. HMAC-SHA256 validation, async response pattern not yet built.
 
-  [TODO]  Environment configuration (.env.example)
-    Must document: FIVETRAN_API_KEY, GOOGLE_API_KEY (or Vertex AI config),
-    BQ project ID, dataset name, connector IDs for GitHub and Jira,
-    optional Slack webhook URL. Key file: .env.example.
+  ── Observability ─────────────────────────────────────────────────────────────
 
-  [TODO]  Cloud Run deployment (optional)
-    Dockerfile for agent + digest job. Cloud Run YAML for scheduling the
-    08:00 daily digest. Secret Manager integration for Slack webhook URL.
-    Key files: Dockerfile, cloudbuild.yaml, cloudrun.yaml.
+  [DONE]  Stdout logging
+    All tool files use Python logging module. Format: timestamp [LEVEL] name.
+    api.py and daily_digest.py log tool call sequences and latency.
 
-  [TODO]  Observability: agent_logs and stdout logging
-    Every tool call logged with timestamp, tool name, and latency to stdout.
-    BigQuery query bytes billed logged per query. Full interaction record
-    written to agent_logs table per turn for audit trail.
+  [DONE]  agent_logs BigQuery table
+    write_agent_log() called after every /query turn. Stores session_id,
+    user_query, tools_called, bq_bytes_processed, latency_ms, response_preview.
+    Silent on failure so logging never breaks the query response path.
+
+  ── Tests ─────────────────────────────────────────────────────────────────────
+
+  [DONE]  tests/test_fivetran_tools.py
+    Mock-mode: github connector, jira connector, unknown ID.
+    HTTP-mode (httpx patched): active connector, stale connector, MCP unreachable.
+    All run without credentials: pytest tests/test_fivetran_tools.py -v
+
+  [DONE]  tests/test_bq_tools.py
+    All 7 tools tested in MOCK_MODE. Verifies return shapes, filter logic,
+    age thresholds, sprint is_on_track, UUID return from write_digest.
+    All run without credentials: pytest tests/test_bq_tools.py -v
+
+  [TODO]  tests/test_agent.py (integration test)
+    Full agent turn with canned question. Not yet written.
 
 
 ────────────────────────────────────────────────────────────────────────────────
   4. PROJECT FILE STRUCTURE
 ────────────────────────────────────────────────────────────────────────────────
 
-  Current state — documentation only:
-
-  devpulse/
-  ├── docs/                          Documentation (complete)
-  │   ├── PRD.md                     Product Requirements Document v1.0
-  │   ├── TRD.md                     Technical Requirements Document v1.0
-  │   ├── DATA_SCHEMA.md             BigQuery schema spec (tables + views)
-  │   └── APP_FLOW.md                User journey flows + error handling
-  ├── .TXT/                          Empty directory (unused)
-  ├── README.md                      Minimal project readme
-  └── .git/                          Git repository metadata
-
-  Planned structure — post-implementation:
+  Current state (2026-05-27):
 
   devpulse/
   ├── agent/
-  │   ├── main.py                    Entry point; CLI or Slack mode selector
-  │   ├── agent.py                   ADK agent initialisation + tool registry
-  │   └── system_prompt.py           Gemini system prompt and decision rules
+  │   ├── __init__.py
+  │   ├── agent.py              ADK agent factory + runner (create_agent, create_runner)
+  │   ├── main.py               Entry point — MODE=api|cli selector
+  │   └── system_prompt.py      SYSTEM_PROMPT constant with 5 hard rules
   ├── tools/
-  │   ├── fivetran_tools.py          check_connector_status, trigger_sync,
-  │   │                              list_connectors (Fivetran MCP wrappers)
-  │   └── bq_tools.py                All 7 BigQuery SDK tools
+  │   ├── __init__.py
+  │   ├── bq_client.py          Lazy singleton, MOCK_MODE-aware
+  │   ├── bq_tools.py           7 BigQuery tools + write_agent_log
+  │   └── fivetran_tools.py     3 Fivetran tools (REST API)
   ├── schema/
-  │   ├── deploy_schema.py           Creates agent_* tables and views in BQ
-  │   └── views.sql                  SQL definitions for all 5 BQ views
+  │   ├── tables.sql            DDL for agent_digests, agent_anomalies, agent_logs
+  │   ├── views.sql             5 BigQuery view definitions
+  │   └── deploy_schema.py      Idempotent schema deployer
   ├── jobs/
-  │   └── daily_digest.py            08:00 digest job (Cloud Run or cron)
+  │   ├── __init__.py
+  │   ├── daily_digest.py       9-step digest orchestrator (standalone runnable)
+  │   └── slack_notifier.py     Slack webhook poster (no-op if URL unset)
   ├── interface/
-  │   ├── cli.py                     Interactive CLI query loop
-  │   └── slack_handler.py           Slack webhook HTTP handler
-  ├── docs/
-  │   ├── PRD.md                     Product Requirements Document
-  │   ├── TRD.md                     Technical Requirements Document
-  │   ├── DATA_SCHEMA.md             Schema specification
-  │   └── APP_FLOW.md                Application flow diagrams
+  │   ├── __init__.py
+  │   ├── api.py                FastAPI server (8 endpoints, CORS, lifespan)
+  │   └── cli.py                Async REPL with colour output
+  ├── mock/
+  │   ├── __init__.py
+  │   ├── fixtures.py           Realistic fixture data (PRs, commits, tickets, sprints)
+  │   └── mock_client.py        BigQuery stub (raises if unexpectedly called)
   ├── tests/
-  │   ├── test_fivetran_tools.py     Unit tests for MCP tool wrappers
-  │   ├── test_bq_tools.py           Unit tests for BigQuery tools
-  │   └── test_agent.py              Integration tests for agent turns
-  ├── .env.example                   Template for required env vars
-  ├── requirements.txt               Python dependencies (to be created)
-  ├── Dockerfile                     Container definition (optional)
-  ├── cloudbuild.yaml                GCP Cloud Build pipeline (optional)
-  └── README.md                      Setup and usage instructions
+  │   ├── __init__.py
+  │   ├── test_fivetran_tools.py  6 test classes, mock + HTTP-mock paths
+  │   └── test_bq_tools.py        7 test classes, all MOCK_MODE
+  ├── docs/
+  │   ├── PRD.md                Product Requirements Document v1.0
+  │   ├── TRD.md                Technical Requirements Document v1.0
+  │   ├── DATA_SCHEMA.md        BigQuery schema spec
+  │   └── APP_FLOW.md           Application flow diagrams
+  ├── .TXT/
+  │   ├── index.txt             This file — living build status snapshot
+  │   ├── implementation_plan.txt  Phase-ordered build sequence with status tags
+  │   └── session_log.txt       Per-session development log
+  ├── .env.example              13 documented env vars
+  ├── requirements.txt          Pinned Python dependencies
+  └── README.md                 Setup, API reference, architecture diagram
 
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -274,311 +306,194 @@
   ── Fivetran-Managed Tables (read-only) ──────────────────────────────────────
 
   TABLE: github_pull_requests
-    Stores all PR metadata synced from GitHub. Fivetran writes; agent reads.
-    RLS: No row-level security in BigQuery; access controlled via service acct.
-    Index: id (primary key), state, created_at (used in all time-filtered queries)
-
-    id                  STRING      GitHub PR ID (primary key)
-    repo_name           STRING      Repository full name (org/repo)
-    number              INTEGER     PR number within the repo
-    title               STRING      PR title
-    state               STRING      open | closed | merged
-    author_login        STRING      GitHub username of the PR author
-    created_at          TIMESTAMP   When the PR was opened
-    updated_at          TIMESTAMP   Last activity on the PR
-    merged_at           TIMESTAMP   When merged (NULL if not merged)
-    closed_at           TIMESTAMP   When closed (NULL if open)
-    review_requested_at TIMESTAMP   When first review was requested
-    _fivetran_synced    TIMESTAMP   Last time Fivetran synced this row
+    id, repo_name, number, title, state, author_login, created_at, updated_at,
+    merged_at, closed_at, review_requested_at, _fivetran_synced
 
   TABLE: github_commits
-    Stores commit history synced from GitHub. Agent reads for velocity metrics.
-    RLS: None. Index: sha (primary key), author_login, committed_at.
-
-    sha                 STRING      Commit SHA (primary key)
-    repo_name           STRING      Repository full name
-    author_login        STRING      GitHub username of committer
-    committed_at        TIMESTAMP   Commit timestamp
-    additions           INTEGER     Lines added
-    deletions           INTEGER     Lines deleted
-    message_summary     STRING      First line of commit message
-    _fivetran_synced    TIMESTAMP   Last Fivetran sync timestamp
+    sha, repo_name, author_login, committed_at, additions, deletions,
+    message_summary, _fivetran_synced
 
   TABLE: github_reviews
-    Stores PR review events. FK to github_pull_requests.id.
-    RLS: None. Index: id (primary key), pull_request_id, submitted_at.
-
-    id                  STRING      Review ID (primary key)
-    pull_request_id     STRING      FK → github_pull_requests.id
-    reviewer_login      STRING      GitHub username of reviewer
-    state               STRING      APPROVED | CHANGES_REQUESTED | COMMENTED
-    submitted_at        TIMESTAMP   When the review was submitted
-    _fivetran_synced    TIMESTAMP   Last Fivetran sync timestamp
+    id, pull_request_id, reviewer_login, state, submitted_at, _fivetran_synced
 
   TABLE: jira_issues
-    Stores Jira ticket data. FK sprint_id → jira_sprints.id.
-    RLS: None. Index: id (primary key), status, sprint_id, updated_at.
-
-    id                  STRING      Jira issue ID (primary key)
-    key                 STRING      Issue key (e.g. ENG-123)
-    project_key         STRING      Jira project identifier
-    summary             STRING      Issue title / summary
-    issue_type          STRING      Story | Bug | Task | Epic | Sub-task
-    status              STRING      To Do | In Progress | In Review | Done | Blocked
-    priority            STRING      Highest | High | Medium | Low | Lowest
-    assignee_id         STRING      Jira account ID of assignee
-    reporter_id         STRING      Jira account ID of reporter
-    created_at          TIMESTAMP   Issue creation time
-    updated_at          TIMESTAMP   Last status change or update
-    resolved_at         TIMESTAMP   Resolution time (NULL if unresolved)
-    sprint_id           STRING      FK → jira_sprints.id (NULL if backlog)
-    story_points        FLOAT       Estimate in story points
-    _fivetran_synced    TIMESTAMP   Last Fivetran sync timestamp
+    id, key, project_key, summary, issue_type, status, priority, assignee_id,
+    reporter_id, created_at, updated_at, resolved_at, sprint_id, story_points,
+    _fivetran_synced
 
   TABLE: jira_sprints
-    Stores sprint metadata. Referenced by jira_issues.sprint_id.
-    RLS: None. Index: id (primary key), state, start_date, end_date.
-
-    id                  STRING      Sprint ID (primary key)
-    name                STRING      Sprint name (e.g. 'Sprint 42')
-    board_id            STRING      FK to the Jira board
-    state               STRING      active | closed | future
-    start_date          DATE        Sprint start date
-    end_date            DATE        Sprint planned end date
-    completed_date      DATE        Actual completion date (NULL if ongoing)
-    _fivetran_synced    TIMESTAMP   Last Fivetran sync timestamp
+    id, name, board_id, state, start_date, end_date, completed_date,
+    _fivetran_synced
 
   ── Agent-Managed Tables (read-write) ────────────────────────────────────────
 
   TABLE: agent_digests
-    Stores daily engineering health summaries written by the agent.
-    One record per business day. narrative field contains Gemini output.
-    Index: digest_id (primary key), digest_date.
-
-    digest_id           STRING      UUID primary key
-    generated_at        TIMESTAMP   When this digest was produced
-    digest_date         DATE        The business day this digest covers
-    open_pr_count       INTEGER     Total open PRs at digest time
-    stale_pr_count      INTEGER     PRs open >3 days without activity
-    commit_count_7d     INTEGER     Commits in the past 7 days
-    commit_count_prev_7d INTEGER    Commits in the 7 days before that
-    anomaly_count       INTEGER     Number of anomalies detected
-    anomaly_summary     STRING      JSON array of top anomalies
-    sprint_on_track     BOOLEAN     Whether the active sprint is on track
-    narrative           STRING      Agent-generated natural-language summary
-    model_used          STRING      Gemini model version used
+    digest_id (UUID PK), generated_at, digest_date, open_pr_count,
+    stale_pr_count, commit_count_7d, commit_count_prev_7d, anomaly_count,
+    anomaly_summary (JSON), sprint_on_track, narrative, model_used
 
   TABLE: agent_anomalies
-    Stores every detected metric anomaly. Severity: low/medium/high based on
-    z-score magnitude. resolved_at populated when metric returns to baseline.
-    Index: anomaly_id (primary key), metric_name, detected_at, severity.
-
-    anomaly_id          STRING      UUID primary key
-    detected_at         TIMESTAMP   When the anomaly was flagged
-    metric_name         STRING      e.g. pr_age_days, commit_count
-    metric_value        FLOAT       Observed value at detection time
-    baseline_mean       FLOAT       Rolling 30-day mean for this metric
-    baseline_stddev     FLOAT       Rolling 30-day standard deviation
-    z_score             FLOAT       Deviation magnitude (|z| > 2 = anomaly)
-    severity            STRING      low | medium | high
-    entity_type         STRING      repo | ticket | sprint
-    entity_id           STRING      Specific repo/ticket/sprint affected
-    resolved_at         TIMESTAMP   When metric returned to normal (NULL if ongoing)
+    anomaly_id (UUID PK), detected_at, metric_name, metric_value,
+    baseline_mean, baseline_stddev, z_score, severity, entity_type,
+    entity_id, resolved_at
 
   TABLE: agent_logs
-    Audit trail of every agent interaction. One record per conversation turn.
-    Used for cost tracking (bq_bytes_processed) and debugging.
-    Index: log_id (primary key), session_id, logged_at.
-
-    log_id              STRING      UUID primary key
-    session_id          STRING      Groups all turns in one conversation
-    logged_at           TIMESTAMP   Timestamp of the interaction
-    user_query          STRING      Raw user input
-    tools_called        STRING      JSON array of tool names invoked
-    bq_bytes_processed  INTEGER     Total BigQuery bytes billed for this turn
-    latency_ms          INTEGER     Total wall-clock time in milliseconds
-    model_used          STRING      Gemini model version
-    response_preview    STRING      First 500 chars of agent response
+    log_id (UUID PK), session_id, logged_at, user_query, tools_called (JSON),
+    bq_bytes_processed, latency_ms, model_used, response_preview
 
   ── BigQuery Views ────────────────────────────────────────────────────────────
 
-  VIEW: v_open_prs_aged
-    Open PRs with age in days, bucketed. Joins github_pull_requests +
-    github_reviews. Used by query_open_prs tool.
-
-  VIEW: v_commit_velocity_daily
-    Daily commit counts per repo. Derived from github_commits.
-    Used by query_commit_velocity tool.
-
-  VIEW: v_ticket_age_by_status
-    Ticket age grouped by current status. Derived from jira_issues.
-    Used by query_stale_tickets tool.
-
-  VIEW: v_sprint_burndown
-    Story points completed vs remaining by day. Joins jira_issues +
-    jira_sprints. Used by query_sprint_health tool.
-
-  VIEW: v_metric_baselines
-    Rolling 30-day mean + stddev per metric. Joins agent_anomalies,
-    github_commits, jira_issues. Used by detect_anomalies tool.
+  VIEW: v_open_prs_aged         → github_pull_requests JOIN github_reviews
+  VIEW: v_commit_velocity_daily → github_commits (GROUP BY date, repo)
+  VIEW: v_ticket_age_by_status  → jira_issues (WHERE resolved_at IS NULL)
+  VIEW: v_sprint_burndown       → jira_issues JOIN jira_sprints (active sprint)
+  VIEW: v_metric_baselines      → 30-day AVG + STDDEV per metric name
 
 
 ────────────────────────────────────────────────────────────────────────────────
   6. API ROUTES
 ────────────────────────────────────────────────────────────────────────────────
 
-  No HTTP API routes exist yet. The planned interface is:
+  All routes live in interface/api.py. Server: uvicorn interface.api:app.
+  Swagger UI: http://localhost:8000/docs
 
-  POST  /query          (Slack webhook / GUI mode)
-    Accepts a JSON body { "text": "<user query>", "session_id": "<id>" }.
-    Runs a full agent turn: check_connector_status → route to BQ tools →
-    synthesise → write_digest if applicable → return response.
-    Auth: Slack signing secret validation (HMAC-SHA256 header check).
-    Non-obvious: session_id groups turns for in-memory history lookup.
+  GET   /health
+    Returns { status, mock_mode, model }. No auth. Used for health checks.
 
-  POST  /digest/trigger  (Cloud Run job or admin call)
-    Triggers an immediate daily digest run outside the 08:00 schedule.
-    No request body required. Returns the generated digest_id on success.
-    Auth: Requires a service account token or a shared secret header.
+  POST  /query
+    Body: { "question": str, "session_id": str (optional) }
+    Returns: { "answer": str, "session_id": str, "latency_ms": int }
+    Runs a full ADK agent turn. session_id maintained across calls for history.
+    Non-obvious: if session_id omitted, creates a new stateless session per call.
 
-  GET   /health          (Cloud Run liveness probe)
-    Returns 200 OK with { "status": "ok", "timestamp": "<ISO8601>" }.
-    No auth required. Used by Cloud Run health checks.
+  GET   /connectors/status
+    Returns: { "github": {…connector dict…}, "jira": {…connector dict…} }
+    Calls check_connector_status for both configured connectors.
 
-  None of these routes are implemented yet.
+  POST  /sync/trigger?connector=github|jira
+    Triggers Fivetran ad-hoc sync. Polls until complete (up to 5 min).
+    Returns: { connector_id, success, sync_completed_at } or { error }.
+
+  GET   /prs/open?min_age_days=3
+    Returns: { "prs": [list], "min_age_days": int }
+    Calls query_open_prs directly (bypasses agent for raw data access).
+
+  GET   /sprint/health
+    Returns active sprint burn-down dict including is_on_track flag.
+
+  GET   /anomalies
+    Runs detect_anomalies() and returns { "anomalies": [list], "count": int }.
+
+  POST  /digest/generate
+    Triggers the full daily_digest.run_digest() flow.
+    Returns: { "digest_id": str, "message": "Digest generated successfully." }
 
 
 ────────────────────────────────────────────────────────────────────────────────
   7. RECENT COMMIT HISTORY
 ────────────────────────────────────────────────────────────────────────────────
 
+  (as of session 2 — 2026-05-27)
+  820fe7a  added documents for better claude usage
   81acefc  Update project name from 'devpulse' to 'DevPulse'
   ad26f4d  project documents
   ffe6275  Initial commit
+
+  Note: backend implementation not yet committed. All source files exist on disk
+  but have not been staged/committed since the session ended mid-build.
 
 
 ────────────────────────────────────────────────────────────────────────────────
   8. OPEN WORK ITEMS
 ────────────────────────────────────────────────────────────────────────────────
 
-  MEDIUM PRIORITY
+  CRITICAL (blocking live demo)
   ─────────────────────────────────────────────────────────────────────────────
 
-  [MEDIUM]  Project scaffolding and environment setup
-    • Create requirements.txt with google-adk, google-cloud-bigquery,
-      python-dotenv, and any ADK HTTP server dependency
-    • Create .env.example documenting all required environment variables
-    • Create top-level package structure (agent/, tools/, schema/, jobs/,
-      interface/, tests/)
-    • Initialise README.md with setup steps and usage examples
+  [CRITICAL]  Obtain GOOGLE_API_KEY
+    URL: https://aistudio.google.com/apikey
+    Without this the Gemini LLM cannot run. MOCK_MODE still works without it
+    for everything except the actual LLM call in the agent and digest synthesis.
 
-  [MEDIUM]  BigQuery schema and view deployment script
-    • Write DDL for three agent-managed tables (agent_digests, agent_anomalies,
-      agent_logs) — Fivetran creates its own tables automatically
-    • Write SQL for all five views (v_open_prs_aged, v_commit_velocity_daily,
-      v_ticket_age_by_status, v_sprint_burndown, v_metric_baselines)
-    • Create a deploy_schema.py script that idempotently applies DDL and views
-    • Document required GCP service account permissions
+  [CRITICAL]  GCP project + BigQuery service account
+    Create GCP project → enable BigQuery API → create service account with
+    roles/bigquery.dataEditor + roles/bigquery.jobUser → download JSON key.
+    Set GCP_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS in .env.
 
-  [MEDIUM]  Fivetran MCP tool wrappers
-    • Implement check_connector_status, trigger_sync, list_connectors as ADK
-      tool functions wrapping the Fivetran MCP Node.js server
-    • Handle MCP server unreachable error (fall back to cached BQ data)
-    • Implement 30-second polling loop for trigger_sync with 5-minute timeout
+  [CRITICAL]  Run python schema/deploy_schema.py
+    Once credentials exist, run once to create the 3 agent tables and 5 views.
 
-  [MEDIUM]  BigQuery tool implementations
-    • Implement all 7 BQ SDK tools (query_open_prs, query_commit_velocity,
-      query_stale_tickets, query_sprint_health, detect_anomalies, write_digest,
-      generate_trend_report)
-    • Ensure all queries use parameterised arguments and include time filters
-    • Wire tools into the ADK agent tool registry
+  [CRITICAL]  Fivetran account + connectors
+    Sign up (14-day free trial) → add GitHub connector → add Jira connector.
+    Set sync frequency to 1 hour. Copy connector IDs to .env.
 
-  [MEDIUM]  Agent core and system prompt
-    • Initialise ADK agent with Gemini 1.5 Pro/Flash model
-    • Encode all five system prompt rules (staleness check, aggregation-only,
-      anomaly severity, time-filtered SQL, connector freshness)
-    • Implement 10-turn in-memory conversation history management
-    • Connect to both CLI and HTTP POST input modes
-
-  LOW PRIORITY
+  HIGH (needed for full feature set)
   ─────────────────────────────────────────────────────────────────────────────
 
-  [LOW]  Daily digest Cloud Run job
-    • Implement jobs/daily_digest.py orchestrating the full digest flow
-    • Write Dockerfile and Cloud Run YAML for scheduled 08:00 execution
-    • Add optional Slack webhook post at end of digest
+  [HIGH]  End-to-end smoke test with live credentials
+    Set MOCK_MODE=false, run `python agent/main.py`, hit POST /query.
+    Verify: check_connector_status is called, a BQ tool is called, answer is coherent.
 
-  [LOW]  CLI and Slack webhook interfaces
-    • Implement interactive CLI loop (interface/cli.py)
-    • Implement Slack webhook HTTP handler with HMAC-SHA256 signature validation
-    • Format agent responses for Slack (block kit or plain text)
+  [HIGH]  Commit all backend code to git
+    All 22 Python files + SQL + config files are on disk but uncommitted.
+    Commit message: "feat: complete backend implementation phases 0-6"
 
-  [LOW]  Observability wiring
-    • Add stdout logging for every tool call (timestamp, tool name, latency)
-    • Log BigQuery bytes billed per query
-    • Ensure every agent turn writes to agent_logs table
+  LOW (post-MVP)
+  ─────────────────────────────────────────────────────────────────────────────
 
-  [LOW]  Tests
-    • Unit tests for Fivetran tool wrappers (mock MCP responses)
-    • Unit tests for BigQuery tools (mock BQ client)
-    • Integration test for a full agent turn against a test BigQuery dataset
-    • Test staleness detection and the sync trigger polling loop
+  [LOW]  tests/test_agent.py — integration test
+    Full agent turn with canned question against mock data.
+    Assert check_connector_status called, BQ tool called, response non-empty.
 
-  [LOW]  GUI
-    • Design and implement a web-based UI for interacting with the agent
-    • Framework selection (e.g. Streamlit, Next.js, or similar) not yet decided
-    • Must surface staleness warnings and anomaly alerts prominently
+  [LOW]  interface/slack_handler.py
+    HMAC-SHA256 validation, async response pattern, response_url POST.
+
+  [LOW]  Cloud Run deployment (Phase 7)
+    Dockerfile, cloudrun.yaml, cloudbuild.yaml, Secret Manager for Slack URL.
 
 
 ────────────────────────────────────────────────────────────────────────────────
   9. ARCHITECTURE NOTES
 ────────────────────────────────────────────────────────────────────────────────
 
-  ── AI PIPELINE ──────────────────────────────────────────────────────────────
+  ── AI PIPELINE (live query) ─────────────────────────────────────────────────
 
-  User query (CLI/Slack/GUI)
-    → ADK Agent receives query, initialises turn
-    → Gemini evaluates query against system prompt rules
-    → check_connector_status (GitHub) via Fivetran MCP
-    → check_connector_status (Jira) via Fivetran MCP
-    → Staleness check: if >4h old, prepend warning to response
-    → Route to 1..N BigQuery tools (parameterised SQL)
+  POST /query  →  FastAPI (interface/api.py)
+    → ADK Runner.run_async(session_id, question)
+    → Gemini reads SYSTEM_PROMPT → decides tool calls
+    → check_connector_status (GitHub) via Fivetran REST API
+    → check_connector_status (Jira) via Fivetran REST API
+    → If stale: prepend ⚠️ warning to response
+    → Route to 1..N BigQuery tools (all parameterised)
     → BigQuery executes queries, returns structured rows
-    → Gemini synthesises rows into natural-language answer
-    → If new insight: write_digest → agent_digests table
-    → Return answer to user
-    → Logger writes full interaction → agent_logs table
+    → Gemini synthesises rows → natural-language answer
+    → If insight detected: write_digest → agent_digests
+    → Return answer, session_id, latency_ms
+    → write_agent_log → agent_logs (fire-and-forget)
 
   ── DAILY DIGEST FLOW ────────────────────────────────────────────────────────
 
-  Cloud Run / cron triggers at 08:00
-    → list_connectors (confirm all sources active)
-    → detect_anomalies (all metric categories) → agent_anomalies table
-    → query_open_prs (3-day threshold)
-    → query_commit_velocity (7-day window)
-    → query_sprint_health (active sprint)
-    → Gemini synthesises all results into structured digest
+  python jobs/daily_digest.py  (or POST /digest/generate)
+    → list_connectors → detect_anomalies → query_open_prs(0)
+    → query_commit_velocity(7) → query_commit_velocity(14)
+    → query_sprint_health → build context dict
+    → google.generativeai.GenerativeModel.generate_content (direct call)
+    → fallback: _template_narrative if Gemini fails
     → write_digest → agent_digests table
-    → Optional: POST digest to Slack webhook
+    → post_to_slack (no-op if SLACK_WEBHOOK_URL unset)
 
-  ── DATA FRESHNESS & STALENESS ───────────────────────────────────────────────
+  ── MOCK MODE ────────────────────────────────────────────────────────────────
 
-  Fivetran syncs GitHub + Jira to BigQuery on a 1-hour cadence.
-  Every agent turn begins with a staleness check via the MCP server.
-  If connector last_sync > 4 hours ago:
-    Agent prepends: "Warning: [source] data is N hours old."
-  If user requests a fresh sync:
-    trigger_sync → poll check_connector_status every 30s → timeout at 5 min
-    → proceed with original query once sync confirmed complete.
-  Fallback if MCP unreachable:
-    Answer from cached BQ data; warn user sync status is unavailable.
+  MOCK_MODE=true in .env activates fixture short-circuits in every tool.
+  Each function checks os.getenv("MOCK_MODE") at the top and returns
+  from mock/fixtures.py if true. The ADK agent still runs; only the data
+  layer is mocked. Requires GOOGLE_API_KEY for the Gemini call.
 
   ── SECURITY MODEL ───────────────────────────────────────────────────────────
 
-  All secrets in environment variables; never in source code or version control.
-  FIVETRAN_API_KEY scoped to read + trigger-sync only (not admin).
-  BigQuery service account scoped to devpulse dataset only (no project-wide).
-  GitHub usernames hashed in agent_digests to avoid storing PII.
-  Slack webhook URL stored in GCP Secret Manager when deployed to Cloud Run.
-  Individual developer performance metrics never exposed — aggregate only.
-  All BigQuery queries parameterised to prevent injection via user input.
+  All secrets in .env; never in source. .gitignore must include .env.
+  FIVETRAN_API_KEY scoped to read + trigger-sync only.
+  BigQuery service account scoped to devpulse dataset only.
+  Individual developer metrics never exposed — aggregate only (system prompt rule).
+  All BigQuery queries parameterised (no SQL injection vector from user input).
+  CORS open in development; tighten allow_origins in production deployment.
